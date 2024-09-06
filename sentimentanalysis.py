@@ -1,53 +1,30 @@
-#analyze tweet sentiment and use that to determine trends of the S&P 500
-#use tweepy as twitter api
- 
-"""
-#Read in twitter dev access keys and tokens
-login = pd.read_csv("keys.csv")
-consumerKey = login['key'][0]
-consumerSecret = login['key'][1]
-accessToken = login['key'][2]
-accessTokenSecret = login['key'][3]
-
-#Create authentication object
-authenticate = tweepy.OAuthHandler(consumerKey, consumerSecret)
-
-#Set access token and token secret
-authenticate.set_access_token(accessToken, accessTokenSecret)
-
-#Create tweepy api object
-api = tweepy.API(authenticate, wait_on_rate_limit=True)
-
-x_posts = tweepy.Cursor(api.search_tweets, q="#S&P500",count=100, lang ="en",since="2019-1-1", tweet_mode="extended").items()
-data=pd.DataFrame(data=[[post_info.created_at.date(),post_info.full_text]for post_info in x_posts],columns=['Date','Tweets'])
-
-"""
-
-####use sentiment 140 dataset to train BERT for sentiment analysis
-
+#Sentiment Analysis Using BERT
 
 import numpy as np
 import re
 import pandas as pd
-import seaborn as sns
-import matplotlib.pyplot as plt
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
 
-#Load and process the sentiment140 dataset which contains pre-processed tweets to train BERT
+
+# Load and process the Sentiment140 dataset, which contains 1.6 million tweets labeled with sentiment.
+# The dataset includes fields like tweet text, date, user info, etc. 
+# We will only use the tweet text and sentiment label for training BERT.
 columns = ['polarity', 'id', 'date', 'query', 'user', 'text']
 df = pd.read_csv("training.1600000.processed.noemoticon.csv", encoding='latin-1', names=columns)
 df.columns=['Sentiment', 'id', 'Date', 'Query', 'User', 'Tweet']
 df = df.drop(columns=['id', 'Date', 'Query', 'User'], axis=1)
-#Make polarity binary (negative = 0, positive = 1)
+
+
+# Convert the sentiment polarity to binary labels (0 for negative, 1 for positive).
 df['Sentiment'] = df.Sentiment.replace(4, 1)
 
-#Adjust each tweet and handl accordingly by removing hashtags, mentions, and urls and replacing them with neutral words
+# Regular expressions to identify hashtags, mentions, and URLs in tweets, which we will replace with neutral words.
 hashtags = re.compile(r"^#\S+|\s#\S+")
 mentions = re.compile(r"^@\S+|\s@\S+")
 urls = re.compile(r"https?://\S+")
 
+# Process each tweet by removing URLs, hashtags, and mentions, replacing them with neutral words.
 def process_text(text):
     text = re.sub(r'http\S+', '', text)
     text = hashtags.sub(' hashtag', text)
@@ -55,42 +32,46 @@ def process_text(text):
 
     return text.strip().lower()
    
-df['Tweet'] = df.Tweet.apply(process_text)
+df['Tweet'] = df.Tweet.apply(process_text) # Apply the processing function to each tweet
 
 
-
-
-
+# Import necessary modules from the Hugging Face transformers library.
 from transformers import BertTokenizer,BertForSequenceClassification
 from torch.utils.data import DataLoader,SequentialSampler,RandomSampler,TensorDataset,random_split
 
+# Load the pre-trained BERT tokenizer.
 tokenizer = BertTokenizer.from_pretrained('bert-base-uncased',do_lower_case = True)
 
+# Tokenize the tweets, add special tokens ([CLS], [SEP]), create attention masks, and return tensors.
 encoder_train = tokenizer.batch_encode_plus(df.Tweet.values,
                                            add_special_tokens = True,
                                            return_attention_mask = True,
                                            padding=True,
                                            return_tensors = 'pt')
 
-
+# Extract tokenized input IDs and attention masks for training.
 input_ids = encoder_train['input_ids']
 attention_masks = encoder_train["attention_mask"]
+
+# Convert sentiment labels to PyTorch tensors.
 labels = torch.tensor(df.Sentiment.values)
 
+# Split the dataset into training (80%) and testing (20%) sets.
 dataset = TensorDataset(input_ids,attention_masks,labels)
 train_size = int(0.80*len(dataset))
 test_size = len(dataset) - train_size
-
 train_dataset,test_dataset = random_split(dataset,[train_size,test_size])
 
 print('Training Size - ',train_size)
 print('Testing Size - ',test_size)
 
+# Create DataLoader for training and testing datasets.
 train_dl = DataLoader(train_dataset,sampler = RandomSampler(train_dataset),
                      batch_size = 32)
 test_dl = DataLoader(test_dataset,sampler = SequentialSampler(test_dataset),
                      batch_size = 32)
 
+# Load the pre-trained BERT model for sequence classification with 2 output labels (positive/negative).
 model = BertForSequenceClassification.from_pretrained(
     'bert-base-uncased',
     num_labels = 2,
@@ -99,8 +80,10 @@ model = BertForSequenceClassification.from_pretrained(
 
 from transformers import get_linear_schedule_with_warmup, AdamW
 
+# Define AdamW optimizer with learning rate and epsilon.
 optimizer = AdamW(model.parameters(),lr = 1e-5,eps = 1e-8)
 
+# Set the number of epochs reate a learning rate scheduler that decreases the learning rate over time.
 epochs  = 1
 scheduler = get_linear_schedule_with_warmup(
             optimizer,
@@ -108,6 +91,7 @@ scheduler = get_linear_schedule_with_warmup(
    num_training_steps = len(train_dl)*epochs 
 )
 
+# Import F1 score calculation function from scikit-learn.
 from sklearn.metrics import f1_score 
 
 def f1_score_func(preds,labels):
@@ -115,7 +99,11 @@ def f1_score_func(preds,labels):
     labels_flat = labels.flatten()
     return f1_score(labels_flat,preds_flat,average = 'weighted')
 
+
+# Dictionary mapping sentiment labels to class numbers.
 dict_label = {"negative" : 0, "positive" : 1}
+
+# Calculate and print the accuracy for each class (positive/negative).
 def accuracy_per_class(preds,labels):
     label_dict_reverse = {v:k for k,v in dict_label.items()}
     
@@ -128,6 +116,7 @@ def accuracy_per_class(preds,labels):
         print(f"Class:{label_dict_reverse}")
         print(f"Accuracy:{len(y_preds[y_preds==label])}/{len(y_true)}\n")
 
+#Set random seeds for reproducability
 import random
 
 seed_val = 17
@@ -141,8 +130,10 @@ model.to(device)
 
 print(f"Loading:{device}")
 
+# Import tqdm for progress bars during training and evaluation.
 from tqdm import tqdm
 
+# Function to evaluate the model on the validation set.
 def evaluate(dataloader_val):
     model.eval()
     
@@ -174,6 +165,7 @@ def evaluate(dataloader_val):
     true_vals = np.concatenate(true_vals,axis=0) 
     return loss_val_avg,predictions,true_vals
 
+# Training loop over the specified number of epochs.
 for epoch in tqdm(range(1,epochs+1)):
     model.train()
     
@@ -207,8 +199,13 @@ for epoch in tqdm(range(1,epochs+1)):
 
     tqdm.write('\nEpoch {epoch}')
     
+    # Calculate and log average training loss for the epoch.
     loss_train_avg = loss_train_total/len(train_dl)
     tqdm.write(f'Training Loss: {loss_train_avg}')
+
+    # Evaluate the model on the validation set.
     val_loss,predictions,true_vals = evaluate(test_dl)
+
+     # Compute F1 score on the validation set.
     test_score = f1_score_func(predictions,true_vals)
     tqdm.write(f'Val Loss:{val_loss}\n Test Score:{test_score}')
