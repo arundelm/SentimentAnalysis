@@ -21,6 +21,7 @@ The dataset used is the Sentiment140 dataset, which contains 1.6 million tweets 
 Sentiment140 Dataset: The dataset includes tweet text and sentiment labels. Tweets are preprocessed to remove URLs, hashtags, and mentions.
 
 BERT Tokenization: Each tweet is tokenized using BERT's tokenizer, adding special tokens such as [CLS] and [SEP].
+
 Training and Testing: The data is split into a training set and a testing set, and the model is trained using AdamW optimizer and a learning rate scheduler.
 
 Output: The results, including the training loss, validation loss, and test scores, are saved to an output.txt file.
