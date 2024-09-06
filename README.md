@@ -8,9 +8,13 @@ The dataset used is the Sentiment140 dataset, which contains 1.6 million tweets 
 
 ## Key Features
 -Model: The model is built using BERT from the Hugging Face transformers library.
+
 -Dataset: The model is trained on the Sentiment140 dataset, which consists of 1.6 million tweets. Each tweet is labeled as either positive (1) or negative (0).
+
 -Training and Testing: The dataset is split into 80% for training and 20% for testing the model.
+
 -Evaluation: The model's performance is evaluated using F1 score and accuracy per class (positive and negative).
+
 -Challenges: Due to hardware limitations (running on a personal laptop), the full dataset of 1.6 million tweets could not be processed, potentially impacting the final test score.
 
 ### Project Structure
